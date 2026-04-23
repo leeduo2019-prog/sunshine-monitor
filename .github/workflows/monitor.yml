@@ -1,0 +1,84 @@
+name: 阳光平台监控
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # UTC 00:00 = 北京 08:00
+    - cron: '0 8 * * *'   # UTC 08:00 = 北京 16:00
+  workflow_dispatch:       # 允许手动触发
+
+permissions:
+  contents: write
+
+concurrency:
+  group: monitor-crawl
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 恢复去重数据
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-data
+          fetch-depth: 1
+
+      - name: 加载去重数据
+        run: |
+          if [ -d "gh-pages-data/data" ]; then
+            cp -r gh-pages-data/data ./data
+            echo "已从 gh-pages 恢复 data/"
+          else
+            echo "gh-pages 无数据，初始化"
+            mkdir -p data
+          fi
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 设置 Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: 创建 .env
+        run: |
+          echo "DINGTALK_WEBHOOK_URL=${{ secrets.DINGTALK_WEBHOOK_URL }}" > .env
+          echo "DINGTALK_SECRET=${{ secrets.DINGTALK_SECRET }}" >> .env
+          echo "FILTER_KEYWORDS=${{ vars.FILTER_KEYWORDS || '造价,审计,决算,财务,预算' }}" >> .env
+          echo "TARGET_URL=https://www.qdygcg.com/web-portal/#/trade-info?purchaseProjectType=&noticeType=&tradePatternId=&publishTime=" >> .env
+          echo "MAX_PAGES=10" >> .env
+          echo "PAGE_LOAD_TIMEOUT=120" >> .env
+          echo "ELEMENT_WAIT_TIMEOUT=30" >> .env
+          echo "PAGE_NAVIGATION_TIMEOUT=15" >> .env
+          echo "MAX_RETRIES=3" >> .env
+          echo "RETRY_DELAY=5" >> .env
+
+      - name: 运行爬虫
+        run: python src/main.py
+
+      - name: 推送更新数据
+        run: |
+          cd gh-pages-data
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          rm -rf data
+          cp -r ../data ./data
+
+          git add data/
+          if git diff --staged --quiet; then
+            echo "数据无变更，跳过提交"
+          else
+            git commit -m "更新去重数据 ($(date -u +%Y-%m-%d %H:%M UTC))"
+            git push
+          fi
