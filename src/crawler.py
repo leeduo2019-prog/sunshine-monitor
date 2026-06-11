@@ -141,7 +141,7 @@ def get_all_pages_html(url, max_pages=None):
         max_pages: 最大爬取页数，默认使用配置值
 
     Returns:
-        str: 合并后的 HTML 内容
+        tuple: (html_content, id_map) where id_map is {项目名称: id}
     """
     max_pages = max_pages or CrawlerConfig.MAX_PAGES
 
@@ -170,12 +170,35 @@ def get_all_pages_html(url, max_pages=None):
 
             # 分页爬取（爬到最后一页，不受 max_pages 限制）
             all_html = ""
+            id_map = {}
             page_num = 1
             while True:
                 logger.info(f"正在爬取第 {page_num} 页...")
                 current_html = driver.page_source
                 all_html += f"\n<!-- 第 {page_num} 页 -->\n" + current_html
                 logger.info(f"第 {page_num} 页 HTML 长度: {len(current_html)}")
+
+                # 从当前页 Vue showList 提取 项目名→ID 映射
+                try:
+                    page_map = driver.execute_script("""
+                        var el = document.querySelector('.trade-head-container');
+                        if (!el || !el.__vue__) return {};
+                        var data = el.__vue__._data || {};
+                        var list = data.showList || [];
+                        var map = {};
+                        for (var i = 0; i < list.length; i++) {
+                            var item = list[i];
+                            if (item.businessName && item.id) {
+                                map[item.businessName] = item.id;
+                            }
+                        }
+                        return map;
+                    """)
+                    if page_map:
+                        id_map.update(page_map)
+                        logger.info(f"第 {page_num} 页提取到 {len(page_map)} 个项目ID映射")
+                except Exception as e:
+                    logger.warning(f"第 {page_num} 页ID映射提取失败: {e}")
 
                 if not has_next_page(driver):
                     logger.info("没有下一页，停止爬取")
@@ -189,7 +212,8 @@ def get_all_pages_html(url, max_pages=None):
                 page_num += 1
 
             logger.info(f"总共爬取 {page_num} 页，合并 HTML 长度: {len(all_html)}")
-            return all_html
+            logger.info(f"ID映射总数: {len(id_map)}")
+            return all_html, id_map
 
         except (TimeoutException, WebDriverException) as e:
             logger.warning(f"爬虫异常 (尝试 {attempt}/{CrawlerConfig.MAX_RETRIES}): {e}")
@@ -197,7 +221,7 @@ def get_all_pages_html(url, max_pages=None):
                 time.sleep(CrawlerConfig.RETRY_DELAY * attempt)
         except Exception as e:
             logger.error(f"爬虫未知异常: {e}", exc_info=True)
-            return ""
+            return "", {}
         finally:
             if driver:
                 try:
@@ -206,12 +230,13 @@ def get_all_pages_html(url, max_pages=None):
                     pass
 
     logger.error(f"爬虫在 {CrawlerConfig.MAX_RETRIES} 次尝试后仍失败")
-    return ""
+    return "", {}
 
 
 def get_page_html(url):
     """单页版本（保持向后兼容）"""
-    return get_all_pages_html(url, max_pages=1)
+    html, id_map = get_all_pages_html(url, max_pages=1)
+    return html
 
 
 if __name__ == "__main__":
@@ -220,8 +245,8 @@ if __name__ == "__main__":
         "TARGET_URL",
         "https://www.qdygcg.com/web-portal/#/trade-info?purchaseProjectType=&noticeType=采购公告&tradePatternId=&publishTime="
     )
-    html = get_all_pages_html(target_url)
+    html, id_map = get_all_pages_html(target_url)
     if html:
-        logger.info(f"HTML 总长度: {len(html)}")
+        logger.info(f"HTML 总长度: {len(html)}，ID映射: {len(id_map)} 条")
     else:
         logger.error("未能获取页面内容")

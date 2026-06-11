@@ -49,17 +49,18 @@ def main():
     try:
         # 1. 获取 HTML
         logger.info(f"目标 URL: {CrawlerConfig.TARGET_URL}")
-        html_content = get_all_pages_html(CrawlerConfig.TARGET_URL)
+        result = get_all_pages_html(CrawlerConfig.TARGET_URL)
+        html_content, id_map = result if isinstance(result, tuple) else (result, {})
 
         if not html_content or len(html_content) < 100:
             logger.error("未能获取有效页面内容")
             send_project_notifications([], is_crawler_failure=True)
             return
 
-        logger.info(f"获取 HTML 成功，长度: {len(html_content)}")
+        logger.info(f"获取 HTML 成功，长度: {len(html_content)}，ID映射: {len(id_map)} 条")
 
         # 2. 解析项目
-        projects = parse_projects(html_content)
+        projects = parse_projects(html_content, id_map=id_map)
         logger.info(f"解析出 {len(projects)} 个项目")
 
         # 3. 关键词筛选

@@ -168,6 +168,9 @@ def send_project_notifications(projects, is_crawler_failure=False):
             f"- **详情**: [点击查看]({project.get('url', '#')})"
             for i, project in enumerate(projects, 1)
         ])
+
+        for p in projects:
+            logger.debug(f"通知项目: {p.get('name', '?')[:30]}... URL={p.get('url', '#')}")
         
         text = (
             f"## 🎯 今日找到 {len(projects)} 个匹配项目\n\n"

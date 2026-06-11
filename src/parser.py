@@ -28,15 +28,16 @@ _NAME_SUFFIXES = ['公示', '公告', '邀请函']
 _DATE_PATTERN = re.compile(r'(\d{4}-\d{2}-\d{2}|\d{2}-\d{2})')
 
 
-def parse_projects(html_content):
+def parse_projects(html_content, id_map=None):
     """
     解析 HTML 内容，提取项目信息
 
     Args:
         html_content: 页面 HTML 内容
+        id_map: 项目名称 → ID 的映射字典，用于构造详情页 URL
 
     Returns:
-        list: 项目列表，每个项目包含 name、owner、date 字段
+        list: 项目列表，每个项目包含 name、owner、date、url 字段
     """
     projects = []
 
@@ -58,7 +59,7 @@ def parse_projects(html_content):
         logger.info(f"找到 {len(project_items)} 个项目卡片")
 
         for item in project_items:
-            project = _extract_project(item)
+            project = _extract_project(item, id_map or {})
             if project:
                 projects.append(project)
 
@@ -70,7 +71,7 @@ def parse_projects(html_content):
         return []
 
 
-def _extract_project(item):
+def _extract_project(item, id_map):
     """从单个项目卡片 DOM 中提取结构化字段"""
     try:
         name = _extract_name_from_dom(item)
@@ -86,7 +87,7 @@ def _extract_project(item):
             'name': name,
             'owner': owner,
             'date': date,
-            'url': _extract_url(item),
+            'url': _extract_url(item, name, id_map),
         }
     except Exception as e:
         logger.debug(f"解析单个项目卡片异常: {e}")
@@ -151,16 +152,51 @@ def _extract_date(text):
     return raw
 
 
-def _extract_url(item):
+_BASE_URL = "https://www.qdygcg.com/web-portal/"
+_DETAIL_URL = _BASE_URL + "#/trade-info-detail?id={}"
+
+
+def _extract_url(item, name='', id_map=None):
     """提取项目详情链接（若存在）"""
+    id_map = id_map or {}
+
+    # 优先用 ID 映射构造详情页 URL
+    if name and name in id_map:
+        project_id = id_map[name]
+        url = _DETAIL_URL.format(project_id)
+        logger.info(f"URL构造: ID映射 → {url}")
+        return url
+
     a = item.find('a', href=True)
     if a:
-        href = a['href']
-        if href.startswith('http'):
+        href = a['href'].strip()
+        if not href or href == 'javascript:void(0)':
+            pass
+        elif href.startswith('http'):
+            logger.info(f"URL提取: 绝对链接 → {href}")
             return href
-        if href.startswith('/'):
-            return f"https://www.qdygcg.com{href}"
-    return '#'
+        elif href.startswith('/'):
+            full = f"https://www.qdygcg.com{href}"
+            logger.info(f"URL提取: 根相对 → {full}")
+            return full
+        elif href.startswith('#/') or href.startswith('#!'):
+            full = f"{_BASE_URL}{href}"
+            logger.info(f"URL提取: hash路由 → {full}")
+            return full
+        else:
+            full = f"{_BASE_URL}{href}"
+            logger.info(f"URL提取: 相对路径 → {full}")
+            return full
+
+    # 无 <a> 标签：尝试从 data 属性或 onclick 提取线索
+    for attr in ('data-href', 'data-url', 'data-id'):
+        val = item.get(attr)
+        if val:
+            logger.info(f"URL提取: {attr} → {val}")
+            return val if val.startswith('http') else f"{_BASE_URL}{val}"
+
+    logger.info(f"URL构造: 未找到ID映射(name={name[:20]}...)，回退到列表页")
+    return f"{_BASE_URL}#/trade-info"
 
 
 def _is_valid_name(name):
