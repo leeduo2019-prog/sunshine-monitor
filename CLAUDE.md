@@ -82,4 +82,36 @@ src/
 | `FILTER_KEYWORDS` | 筛选关键词（逗号分隔） | 造价,审计,决算,财务,预算 |
 | `MAX_PAGES` | 最大爬取页数 | 10 |
 | `MAX_RETRIES` | 爬虫重试次数 | 3 |
-| `PAGE_L
+| `PAGE_LOAD_TIMEOUT` | 页面加载超时(秒) | 120 |
+| `ELEMENT_WAIT_TIMEOUT` | 元素等待超时(秒) | 30 |
+
+`.env` 文件已在 `.gitignore` 中，**不要提交到版本控制**。
+
+## 开发进展（2026-06-11 Cowork 会话）
+
+本轮在 Cowork 沙箱端完成代码审查 + 修复，对应 commit `11a1533`。
+
+### 已完成的修复
+
+| 模块 | 改动 |
+|------|------|
+| `parser.py` | BS4 选择器替代字符串切分；新增 url 提取；日期支持 mm-dd 短格式；_is_valid_name 加严 |
+| `crawler.py` | 点击顺序修正（时间筛选放最后）；点击失败降级不中断 |
+| `config.py` | 新增 log_to_file 选项，写入 `logs/monitor.log` |
+| `run_monitor.bat` | `%~dp0` 自适应路径；日志按日分文件 |
+| `.env` / `.env.example` | 删除未使用的 SMTP 配置 |
+| `README.md` | 修正目录名、补充 gh-pages 和 Actions 部署说明 |
+
+### 当前 Git 状态
+
+```
+main 分支领先 origin/main 1 commit（11a1533），尚未 push
+未暂存修改：CLAUDE.md、README.md、run_monitor.bat（本轮后续微调）
+```
+
+### CLI 接手后的待办
+
+1. **推送代码**：先 commit 未暂存修改，然后 `git push origin main`
+2. **验证 gh-pages**：`git fetch origin gh-pages && git ls-tree origin/gh-pages data/`，确认 `project_history.json` 存在
+3. **触发 Actions**：push 后自动触发，用 `gh run list --workflow=<name>` 查看，`gh run view <id> --log` 看日志
+4. **端到端验证**：确认钉钉收到通知、`data/project_history.json` 有新记录写入

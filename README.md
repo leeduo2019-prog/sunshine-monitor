@@ -143,4 +143,23 @@ wlpc-c1/
 ├── CLAUDE.md
 ├── data/               # 运行数据（本地；GitHub Actions 用 gh-pages 分支持久化）
 │   └── project_history.json  # 项目去重历史
-├── logs/               # 运行日志（
+├── logs/               # 运行日志（monitor.log、monitor_YYYY-MM-DD.log）
+└── src/
+    ├── config.py           # 配置管理 + 日志初始化
+    ├── main.py             # 主入口
+    ├── crawler.py          # 爬虫模块（Selenium）
+    ├── parser.py           # 解析模块（BS4 选择器）
+    ├── dedup.py            # 去重模块
+    └── dingtalk_notifier.py # 钉钉通知模块
+```
+
+## 部署到 GitHub 的前置准备
+
+1. 推送代码到 GitHub 仓库（默认分支 `main`）
+2. 创建 `gh-pages` 分支并提交一份空的 `data/project_history.json`（用于首次去重数据）
+3. 在 **Settings → Secrets and variables → Actions** 添加：
+   - `DINGTALK_WEBHOOK_URL`
+   - `DINGTALK_SECRET`
+4. 工作流会在每个 cron 触发时拉取 `gh-pages` 数据、执行爬虫、回写 `gh-pages`
+
+> ⚠️ 如果 `gh-pages` 分支不存在或权限被撤销，去重历史会丢失，钉钉可能收到重复推送。
