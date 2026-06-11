@@ -1,8 +1,15 @@
 @echo off
-if not exist "E:\wlpc-c1\logs" mkdir "E:\wlpc-c1\logs"
-echo Step1 OK >> E:\wlpc-c1\logs\test.log
-cd /d E:\wlpc-c1
-echo Step2 CD=%CD% >> E:\wlpc-c1\logs\test.log
-if exist "E:\wlpc-c1\src\main.py" (echo main.py exists >> E:\wlpc-c1\logs\test.log) else (echo main.py NOT FOUND >> E:\wlpc-c1\logs\test.log)
-where python >> E:\wlpc-c1\logs\test.log 2>&1
-echo Step3 DONE >> E:\wlpc-c1\logs\test.log
+REM ============================================================
+REM 阳光平台监控 - 手动/计划任务运行入口
+REM 使用 %~dp0 自适应项目路径，可在任意目录部署
+REM ============================================================
+
+setlocal
+
+REM 切到脚本所在目录（项目根）
+cd /d "%~dp0"
+
+REM 创建日志目录
+if not exist "logs" mkdir "logs"
+
+REM 日志文件：lo

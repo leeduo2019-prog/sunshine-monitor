@@ -39,6 +39,8 @@ deploy_schedule.bat
 run_monitor.bat
 ```
 
+> `run_monitor.bat` 使用 `%~dp0` 自适应路径，日志写入 `logs/monitor_YYYY-MM-DD.log`，可在任意目录部署。
+
 ## 架构与目录结构
 
 项目采用**线性编排模式**，主入口 `src/main.py` 依次调用各模块：
@@ -63,10 +65,11 @@ src/
 ### 关键设计细节
 
 - **SPA 爬取**：目标站点为 Vue SPA，需等待 `li.number` 分页组件出现后才算就绪
-- **筛选条件**：自动点击"全部"(交易领域)、"全部"(采购方式)、"采购公告"(公告类型)、"今天"(发布时间)
+- **筛选顺序**：`采购公告 → 全部(领域) → 全部(方式) → 今天`，时间筛选放最后避免被覆盖
 - **分页策略**：不受 `MAX_PAGES` 限制，会一直爬到最后一页
-- **去重存储**：`data/project_history.json`，key 为项目名称，value 为通知日期
+- **去重存储**：`data/project_history.json`（GitHub Actions 用 `gh-pages` 分支持久化）
 - **钉钉加签**：使用 HMAC-SHA256 + Base64 + URL-encode 生成签名参数
+- **日志**：同时输出到控制台与 `logs/monitor.log`
 
 ## 配置
 
@@ -79,7 +82,4 @@ src/
 | `FILTER_KEYWORDS` | 筛选关键词（逗号分隔） | 造价,审计,决算,财务,预算 |
 | `MAX_PAGES` | 最大爬取页数 | 10 |
 | `MAX_RETRIES` | 爬虫重试次数 | 3 |
-| `PAGE_LOAD_TIMEOUT` | 页面加载超时(秒) | 120 |
-| `ELEMENT_WAIT_TIMEOUT` | 元素等待超时(秒) | 30 |
-
-`.env` 文件已在 `.gitignore` 中，**不要提交到版本控制**。
+| `PAGE_L

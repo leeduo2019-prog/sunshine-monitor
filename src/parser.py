@@ -2,21 +2,30 @@
 # -*- coding: utf-8 -*-
 """
 解析器模块 - 解析 HTML 并提取项目信息
+
+优先使用 BeautifulSoup 选择器定位字段，规避字符串切分脆弱性。
 """
 
 import logging
 import re
+from datetime import datetime
 from bs4 import BeautifulSoup
 
 from config import FilterConfig
 
 logger = logging.getLogger(__name__)
 
-# 无效关键词常量
+# 无效关键词常量（出现在项目名称中应剔除）
 _INVALID_KEYWORDS = [
     '条/页', '10条', '20条', '50条', '100条',
     '监督举报', '请先登录', '返回首页', '国家企业信用信息公示系统'
 ]
+
+# 项目名称合法后缀
+_NAME_SUFFIXES = ['公示', '公告', '邀请函']
+
+# 日期匹配模式（带可选年份）
+_DATE_PATTERN = re.compile(r'(\d{4}-\d{2}-\d{2}|\d{2}-\d{2})')
 
 
 def parse_projects(html_content):
@@ -36,30 +45,22 @@ def parse_projects(html_content):
         return projects
 
     try:
-        soup = BeautifulSoup(html_content, 'lxml')
-
         if "暂无数据" in html_content:
             logger.info("页面显示暂无数据")
             return projects
 
-        project_items = soup.find_all('div', class_='show-item')
+        soup = BeautifulSoup(html_content, 'lxml')
+
+        # 通过结构化选择器定位卡片，避免依赖特定 class 名
+        project_items = soup.select('div.show-item') or soup.find_all(
+            'div', attrs={'class': lambda v: v and 'show-item' in v}
+        )
         logger.info(f"找到 {len(project_items)} 个项目卡片")
 
-        for i, item in enumerate(project_items):
-            item_text = item.get_text(separator=' ', strip=True)
-
-            project_name = _extract_project_name(item_text)
-            if not project_name:
-                continue
-
-            owner = _extract_owner(item_text)
-            date = _extract_date(item_text)
-
-            projects.append({
-                'name': project_name,
-                'owner': owner,
-                'date': date
-            })
+        for item in project_items:
+            project = _extract_project(item)
+            if project:
+                projects.append(project)
 
         logger.info(f"成功解析 {len(projects)} 个项目")
         return projects
@@ -69,41 +70,106 @@ def parse_projects(html_content):
         return []
 
 
-def _extract_project_name(item_text):
-    """提取项目名称"""
-    if '招标编号' in item_text:
-        idx = item_text.find('招标编号')
-        name = item_text[:idx].strip()
-        if name and len(name) >= 5:
-            return name
+def _extract_project(item):
+    """从单个项目卡片 DOM 中提取结构化字段"""
+    try:
+        name = _extract_name_from_dom(item)
+        if not name or not _is_valid_name(name):
+            return None
 
-    suffixes = ['公示', '公告', '邀请函']
-    for suffix in suffixes:
-        if suffix in item_text:
-            name = item_text[:item_text.find(suffix) + len(suffix)].strip()
-            if name and len(name) >= 5:
-                return name
+        owner = _extract_owner_from_dom(item)
+
+        full_text = item.get_text(separator=' ', strip=True)
+        date = _extract_date(full_text)
+
+        return {
+            'name': name,
+            'owner': owner,
+            'date': date,
+            'url': _extract_url(item),
+        }
+    except Exception as e:
+        logger.debug(f"解析单个项目卡片异常: {e}")
+        return None
+
+
+def _extract_name_from_dom(item):
+    """从 DOM 提取项目名称"""
+    title_el = item.find(lambda tag: tag.name in ('h1', 'h2', 'h3', 'h4', 'p', 'div', 'span')
+                         and tag.get_text(strip=True)
+                         and '招标编号' in tag.get_text())
+    if title_el:
+        full = title_el.get_text(separator=' ', strip=True)
+        idx = full.find('招标编号')
+        if idx > 0:
+            candidate = full[:idx].strip()
+            if _is_valid_name(candidate):
+                return candidate
+
+    full_text = item.get_text(separator=' ', strip=True)
+    if '招标编号' in full_text:
+        candidate = full_text[:full_text.find('招标编号')].strip()
+        if _is_valid_name(candidate):
+            return candidate
+
+    for suffix in _NAME_SUFFIXES:
+        if suffix in full_text:
+            candidate = full_text[:full_text.find(suffix) + len(suffix)].strip()
+            if _is_valid_name(candidate):
+                return candidate
 
     return None
 
 
-def _extract_owner(item_text):
-    """提取招标人"""
-    match = re.search(r'招标人[:：\s]*([^\s发布时间]{2,50})', item_text)
-    return match.group(1).strip() if match else '未知'
+def _extract_owner_from_dom(item):
+    """从 DOM 提取招标人"""
+    label_el = item.find(lambda tag: tag.name
+                         and '招标人' in tag.get_text()
+                         and len(tag.get_text(strip=True)) < 200)
+    if label_el:
+        text = label_el.get_text(separator=' ', strip=True)
+        m = re.search(r'招标人\s*[:：]?\s*(.+?)(?=\s*(?:发布时间|招标编号|$))', text)
+        if m:
+            owner = m.group(1).strip()
+            if owner:
+                return owner
+
+    full_text = item.get_text(separator=' ', strip=True)
+    m = re.search(r'招标人\s*[:：]?\s*([^\s]{2,50}?)(?=\s*(?:发布时间|招标编号|$))', full_text)
+    return m.group(1).strip() if m else '未知'
 
 
-def _extract_date(item_text):
-    """提取发布时间"""
-    match = re.search(r'发布时间[:：\s]*(\d{4}-\d{2}-\d{2}|\d{2}-\d{2})', item_text)
-    return match.group(1) if match else '未知'
+def _extract_date(text):
+    """从文本中提取第一个日期字符串"""
+    m = _DATE_PATTERN.search(text)
+    if not m:
+        return '未知'
+    raw = m.group(1)
+    # 短格式 mm-dd 补全年份
+    if len(raw) == 5:
+        return f"{datetime.now().year}-{raw}"
+    return raw
 
 
-def _is_valid_project(name):
+def _extract_url(item):
+    """提取项目详情链接（若存在）"""
+    a = item.find('a', href=True)
+    if a:
+        href = a['href']
+        if href.startswith('http'):
+            return href
+        if href.startswith('/'):
+            return f"https://www.qdygcg.com{href}"
+    return '#'
+
+
+def _is_valid_name(name):
     """验证项目名称是否有效"""
+    if not name or len(name) < 5 or len(name) > 200:
+        return False
     if any(kw in name for kw in _INVALID_KEYWORDS):
         return False
-    if not any('\u4e00' <= char <= '\u9fff' for char in name):
+    if not any('一' <= ch <= '鿿' for ch in name):
         return False
     return True
 

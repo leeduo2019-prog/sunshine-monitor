@@ -125,28 +125,22 @@ git checkout main
 
 ## Windows 定时任务
 
-```bash
-python setup_task.py
-```
+以管理员身份运行 `deploy_schedule.bat`，会创建两个每日任务（09:30 / 21:30）。
 
-或双击 `run_monitor.bat` 手动运行。
+- 入口脚本：`run_monitor.bat`（自动定位项目根，日志写到 `logs/`）
+- 不再使用 `setup_task.py`（已移除）
 
 ## 目录结构
 
 ```
-wlpc-3/
-├── .env.example      # 环境变量模板
+wlpc-c1/
+├── .env.example        # 环境变量模板
 ├── .gitignore
 ├── requirements.txt
-├── run_monitor.bat   # Windows 批处理入口
-├── setup_task.py     # 定时任务设置
-├── data/             # 运行数据（自动生成）
+├── deploy_schedule.bat # Windows 计划任务部署脚本
+├── run_monitor.bat     # Windows 批处理入口（自适配路径）
+├── README.md
+├── CLAUDE.md
+├── data/               # 运行数据（本地；GitHub Actions 用 gh-pages 分支持久化）
 │   └── project_history.json  # 项目去重历史
-└── src/
-    ├── config.py           # 配置管理
-    ├── main.py             # 主入口
-    ├── crawler.py          # 爬虫模块
-    ├── parser.py           # 解析模块
-    ├── dedup.py            # 去重模块
-    └── dingtalk_notifier.py # 钉钉通知模块
-```
+├── logs/               # 运行日志（

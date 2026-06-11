@@ -5,6 +5,7 @@
 """
 
 import time
+import os
 import logging
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -36,15 +37,12 @@ def _create_driver():
     chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
     chrome_options.page_load_strategy = 'normal'
 
-    import os
-
     # 计划任务环境下，webdriver_manager 可能无法正常下载，添加容错
     try:
         driver_path = ChromeDriverManager().install()
         logger.info(f"ChromeDriver 路径: {driver_path}")
     except Exception as e:
         logger.warning(f"webdriver_manager 失败，尝试系统 ChromeDriver: {e}")
-        # 回退到系统 PATH 中的 chromedriver
         driver_path = "chromedriver"
 
     service = Service(driver_path)
@@ -62,7 +60,6 @@ def _wait_for_page_ready(driver, timeout=None):
         WebDriverWait(driver, timeout).until(
             EC.presence_of_element_located((By.TAG_NAME, 'body'))
         )
-        # 额外等待分页组件出现（SPA 常见标志）
         try:
             WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'li.number'))
@@ -159,11 +156,17 @@ def get_all_pages_html(url, max_pages=None):
 
             _wait_for_page_ready(driver)
 
-            # 点击筛选条件（按图片红框标注）
-            _click_radio(driver, "全部")  # 交易领域
-            _click_radio(driver, "全部")  # 采购方式
-            _click_radio(driver, "采购公告")  # 公告类型
-            _click_radio(driver, "今天")  # 发布时间
+            # 点击筛选条件：按"公告类型 → 全部重置 → 时间"顺序，
+            # 时间类筛选放最后，避免后续点击把"今天"覆盖。
+            # 每个 click 之间显式等待分页组件刷新。
+            if not _click_radio(driver, "采购公告"):  # 公告类型
+                logger.warning("未点击到 '采购公告'，可能已是默认")
+            if not _click_radio(driver, "全部"):  # 交易领域（重置）
+                logger.warning("未点击到 '全部'(交易领域)")
+            if not _click_radio(driver, "全部"):  # 采购方式（重置）
+                logger.warning("未点击到 '全部'(采购方式)")
+            if not _click_radio(driver, "今天"):  # 发布时间（最后，避免被覆盖）
+                logger.warning("未点击到 '今天'，将拉取全部时间数据")
 
             # 分页爬取（爬到最后一页，不受 max_pages 限制）
             all_html = ""
@@ -191,7 +194,7 @@ def get_all_pages_html(url, max_pages=None):
         except (TimeoutException, WebDriverException) as e:
             logger.warning(f"爬虫异常 (尝试 {attempt}/{CrawlerConfig.MAX_RETRIES}): {e}")
             if attempt < CrawlerConfig.MAX_RETRIES:
-                time.sleep(CrawlerConfig.RETRY_DELAY * attempt)  # 指数退避
+                time.sleep(CrawlerConfig.RETRY_DELAY * attempt)
         except Exception as e:
             logger.error(f"爬虫未知异常: {e}", exc_info=True)
             return ""
@@ -213,8 +216,11 @@ def get_page_html(url):
 
 if __name__ == "__main__":
     setup_logging()
-    target_url = "https://www.qdygcg.com/web-portal/#/trade-info?purchaseProjectType=&noticeType=采购公告&tradePatternId=&publishTime="
-    html = get_all_pages_html(target_url, max_pages=3)
+    target_url = os.getenv(
+        "TARGET_URL",
+        "https://www.qdygcg.com/web-portal/#/trade-info?purchaseProjectType=&noticeType=采购公告&tradePatternId=&publishTime="
+    )
+    html = get_all_pages_html(target_url)
     if html:
         logger.info(f"HTML 总长度: {len(html)}")
     else:
