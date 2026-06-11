@@ -153,17 +153,28 @@ def _extract_date(text):
 
 
 _BASE_URL = "https://www.qdygcg.com/web-portal/"
-_DETAIL_URL = _BASE_URL + "#/trade-info-detail?id={}"
 
 
 def _extract_url(item, name='', id_map=None):
     """提取项目详情链接（若存在）"""
     id_map = id_map or {}
 
-    # 优先用 ID 映射构造详情页 URL
+    # 优先用 ID 映射构造详情页 URL（含 noticeType/publishStatus/systemStatus 参数）
     if name and name in id_map:
-        project_id = id_map[name]
-        url = _DETAIL_URL.format(project_id)
+        info = id_map[name]
+        if isinstance(info, dict):
+            project_id = info.get('id', '')
+            notice_type = info.get('noticeType', '')
+            publish_status = info.get('publishStatus', '')
+            system_status = info.get('systemStatus')
+            # null/None → false
+            system_status_str = str(system_status).lower() if system_status is not None else 'false'
+            url = (f"{_BASE_URL}#/trade-info-detail?id={project_id}"
+                   f"&noticeType={notice_type}"
+                   f"&publishStatus={publish_status}"
+                   f"&systemStatus={system_status_str}")
+        else:
+            url = f"{_BASE_URL}#/trade-info-detail?id={info}"
         logger.info(f"URL构造: ID映射 → {url}")
         return url
 

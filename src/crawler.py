@@ -189,7 +189,12 @@ def get_all_pages_html(url, max_pages=None):
                         for (var i = 0; i < list.length; i++) {
                             var item = list[i];
                             if (item.businessName && item.id) {
-                                map[item.businessName] = item.id;
+                                map[item.businessName] = {
+                                    id: item.id,
+                                    noticeType: item.noticeType,
+                                    publishStatus: item.publishStatus,
+                                    systemStatus: item.systemStatus
+                                };
                             }
                         }
                         return map;
